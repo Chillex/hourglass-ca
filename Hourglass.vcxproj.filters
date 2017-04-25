@@ -21,6 +21,9 @@
     <ClCompile Include="Hourglass.cpp">
       <Filter>Source Files</Filter>
     </ClCompile>
+    <ClCompile Include="LUT.cpp">
+      <Filter>Source Files</Filter>
+    </ClCompile>
   </ItemGroup>
   <ItemGroup>
     <ClInclude Include="Hourglass.h">

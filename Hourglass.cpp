@@ -1,22 +1,24 @@
 #include "Hourglass.h"
-#include "LUT.h"
 
 Hourglass::Hourglass(size_t width, size_t height, const sf::Vector2f& viewSize)
-	: m_air(255, 255, 255, 255)
-	, m_wall(64, 64, 64, 255)
-	, m_sand(245, 204, 77, 255)
+	: m_air(LUT::colorLUT[0])
+	, m_wall(LUT::colorLUT[2])
+	, m_sand(LUT::colorLUT[1])
 	, m_width(width)
 	, m_height(height)
+	, m_generator(static_cast<unsigned>(time(nullptr)))
+	, m_distribution(0.0f, 1.0f)
 	, m_useOffset(false)
 {
 	// create texture
-	if(!m_texture.create(m_width, m_height))
+	m_maxDimension = (m_width > m_height) ? m_width : m_height;
+	if(!m_texture.create(m_maxDimension, m_maxDimension))
 	{
-		printf("ERROR::HOURGLASS::CANT_CREATET_TEXTURE: %zu * %zu", m_width, m_height);
+		printf("ERROR::HOURGLASS::CANT_CREATE_TEXTURE: %zu * %zu", m_width, m_height);
 	}
 
 	// create pixels
-	m_pixels = new sf::Uint8[m_width * m_height * 4]; // * 4 because RGBA
+	m_pixels = new sf::Uint8[m_maxDimension * m_maxDimension * 4]; // * 4 because RGBA
 	DrawEmptyHourglass();
 
 	// update texture with generated pixels
@@ -24,8 +26,9 @@ Hourglass::Hourglass(size_t width, size_t height, const sf::Vector2f& viewSize)
 
 	// INFO: true paramater resets the texture rect to match new texture
 	m_sprite.setTexture(m_texture, true);
-	m_sprite.setOrigin(m_width * 0.5f, m_height * 0.5f);
+	m_sprite.setOrigin(m_maxDimension * 0.5f, m_maxDimension * 0.5f);
 	m_sprite.setPosition(viewSize.x * 0.5f, viewSize.y * 0.5f);
+	//m_sprite.setPosition(m_maxDimension * 0.5f, m_maxDimension * 0.5f);
 }
 
 Hourglass::~Hourglass()
@@ -34,44 +37,56 @@ Hourglass::~Hourglass()
 
 void Hourglass::Simulate()
 {
-	sf::Uint8* pixelBuffer = m_pixels; // * 4 because RGBA
+	unsigned state[4];
+	unsigned resultState[4];
+	unsigned maskLeftTop = ((1 << 2) - 1) << 6;
+	unsigned maskRightTop = ((1 << 2) - 1) << 4;
+	unsigned maskLeftBottom = ((1 << 2) - 1) << 2;
+	unsigned maskRightBottom = ((1 << 2) - 1) << 0;
 
-	for (size_t y = m_useOffset ? 1 : 0; y < m_height - 1; y += 2)
+	for (size_t y = m_useOffset ? 1 : 0; y < m_maxDimension - 1; y += 2)
 	{
-		for (size_t x = m_useOffset ? 1 : 0; x < m_width; x += 2)
+		for (size_t x = m_useOffset ? 1 : 0; x < m_maxDimension; x += 2)
 		{
-			size_t leftTop = (y * m_width + x) * 4;
-			size_t rightTop = (y * m_width + x + 1) * 4;
-			size_t leftBot = ((y + 1) * m_width + x) * 4;
-			size_t rightBot = ((y + 1) * m_width + x + 1) * 4;
+			size_t pixelIndex[4] = {
+				(y * m_maxDimension + x) * 4,			// left top
+				(y * m_maxDimension + x + 1) * 4,		// right top
+				((y + 1) * m_maxDimension + x) * 4,		// left bottom
+				((y + 1) * m_maxDimension + x + 1) * 4	// right bottom
+			};
 
 			// get LUT case
-			char state[4] = {
-				(m_pixels[leftTop] == m_sand.r) ? 1 : 0,
-				(m_pixels[rightTop] == m_sand.r) ? 1 : 0,
-				(m_pixels[leftBot] == m_sand.r) ? 1 : 0,
-				(m_pixels[rightBot] == m_sand.r) ? 1 : 0
-			};
-			unsigned int lutCase = (state[0] << 0) | (state[1] << 1) | (state[2] << 2) | (state[3] << 3);
-			
-			// get result
-			unsigned int result = LUT::resultTable[lutCase];
-			char resultState[4] = {
-				(result & (1 << 0)) >> 0,
-				(result & (1 << 1)) >> 1,
-				(result & (1 << 2)) >> 2,
-				(result & (1 << 3)) >> 3
-			};
+			state[0] = LUT::colorRTable[m_pixels[pixelIndex[0]]];
+			state[1] = LUT::colorRTable[m_pixels[pixelIndex[1]]];
+			state[2] = LUT::colorRTable[m_pixels[pixelIndex[2]]];
+			state[3] = LUT::colorRTable[m_pixels[pixelIndex[3]]];
 
-			WriteColorToPixels(pixelBuffer, (resultState[0] == 1) ? m_sand : m_air, leftTop);
-			WriteColorToPixels(pixelBuffer, (resultState[1] == 1) ? m_sand : m_air, rightTop);
-			WriteColorToPixels(pixelBuffer, (resultState[2] == 1) ? m_sand : m_air, leftBot);
-			WriteColorToPixels(pixelBuffer, (resultState[3] == 1) ? m_sand : m_air, rightBot);
+			unsigned lutCase = (state[0] << 6) | (state[1] << 4) | (state[2] << 2) | (state[3] << 0);
+
+			// get result
+			unsigned result = LUT::resultTable[lutCase];
+
+			// special case of two sand cells are next to each other with air below them
+			if(lutCase == 80 && m_distribution(m_generator) < 0.5f)
+			{
+				// the cells dont update
+				result = lutCase;
+			}
+
+			resultState[0] = (result & maskLeftTop) >> 6;
+			resultState[1] = (result & maskRightTop) >> 4;
+			resultState[2] = (result & maskLeftBottom) >> 2;
+			resultState[3] = (result & maskRightBottom) >> 0;
+
+			// write new pixels
+			WriteColorToPixels(m_pixels, LUT::colorLUT[resultState[0]], pixelIndex[0]);
+			WriteColorToPixels(m_pixels, LUT::colorLUT[resultState[1]], pixelIndex[1]);
+			WriteColorToPixels(m_pixels, LUT::colorLUT[resultState[2]], pixelIndex[2]);
+			WriteColorToPixels(m_pixels, LUT::colorLUT[resultState[3]], pixelIndex[3]);
 		}
 	}
 
-	// apply buffer
-	m_pixels = pixelBuffer;
+	// apply new pixels
 	m_texture.update(m_pixels);
 
 	m_useOffset = !m_useOffset;
@@ -82,36 +97,57 @@ void Hourglass::Draw(sf::RenderWindow& window) const
 	window.draw(m_sprite);
 }
 
+void Hourglass::Rotate(float angle)
+{
+	float half = m_maxDimension * 0.5f;
+	sf::Sprite sprite(m_texture);
+	sprite.setOrigin(half, half);
+	sprite.setPosition(half, half);
+	sprite.rotate(angle);
+
+	sf::RenderTexture renderTexture;
+	renderTexture.create(m_maxDimension, m_maxDimension);
+	renderTexture.clear(m_wall);
+	renderTexture.draw(sprite);
+	renderTexture.display();
+
+	sf::Image result = renderTexture.getTexture().copyToImage();
+	memcpy(m_pixels, result.getPixelsPtr(), sizeof(sf::Uint8) * m_maxDimension * m_maxDimension * 4);
+	m_texture.update(m_pixels);
+}
+
 void Hourglass::DrawEmptyHourglass(void)
 {
-	float halfHeight = m_height * 0.5f;
+	float halfDimension = m_maxDimension * 0.5f;
 	float halfWidth = m_width * 0.5f;
+	float halfHeight = m_height * 0.5f;
+	float widthBuffer = (m_maxDimension - m_width) * 0.5f;
 
-	float wallSizeIncrease = (halfWidth - 10) / halfHeight;
+	float wallSizeIncrease = (halfWidth - 5) / halfHeight;
 
-	for (size_t row = 0; row < m_height; ++row)
+	for (size_t row = 0; row < m_maxDimension; ++row)
 	{
-		for (size_t col = 0; col < m_width; ++col)
+		for (size_t col = 0; col < m_maxDimension; ++col)
 		{
-			size_t pixelIndex = (row * m_width + col) * 4;
+			size_t pixelIndex = (row * m_maxDimension + col) * 4;
 
-			float wallSize = 0.0f;
-			if (row <= halfHeight)
+			float wallSize = widthBuffer;
+			if (row <= halfDimension)
 			{
-				wallSize = wallSizeIncrease * row;
+				wallSize += wallSizeIncrease * row;
 			}
 			else
 			{
-				wallSize = wallSizeIncrease * (m_height - row);
+				wallSize += wallSizeIncrease * (m_maxDimension - row);
 			}
 			
-			if (col < wallSize || col > m_width - wallSize)
+			if (col < wallSize || col > m_maxDimension - wallSize)
 			{
 				WriteColorToPixels(m_pixels, m_wall, pixelIndex);
 			}
 			else
 			{
-				if(row >= 20 && row <= halfHeight)
+				if(row >= 20 && row <= halfDimension)
 					WriteColorToPixels(m_pixels, m_sand, pixelIndex);
 				else
 					WriteColorToPixels(m_pixels, m_air, pixelIndex);
