@@ -1,5 +1,11 @@
 #include "Hourglass.h"
 
+#include "OpenCLManager.h"
+
+#include "LUT.h"
+
+#include <fstream>
+
 Hourglass::Hourglass(size_t width, size_t height, const sf::Vector2f& viewSize)
 	: m_air(LUT::colorLUT[0])
 	, m_wall(LUT::colorLUT[2])
@@ -35,7 +41,50 @@ Hourglass::~Hourglass()
 {
 }
 
-void Hourglass::Simulate()
+void Hourglass::Simulate(SimulationMode::Enum simulationMode)
+{
+	if(simulationMode == SimulationMode::Sequential)
+	{
+		SimulateSeq();
+	}
+	else
+	{
+		SimulateOpenCL(simulationMode);
+	}
+
+	m_simulationMode = simulationMode;
+
+	// apply new pixels
+	m_texture.update(m_pixels);
+
+	m_useOffset = !m_useOffset;
+}
+
+void Hourglass::Draw(sf::RenderWindow& window) const
+{
+	window.draw(m_sprite);
+}
+
+void Hourglass::Rotate(float angle)
+{
+	float half = m_maxDimension * 0.5f;
+	sf::Sprite sprite(m_texture);
+	sprite.setOrigin(half, half);
+	sprite.setPosition(half, half);
+	sprite.rotate(angle);
+
+	sf::RenderTexture renderTexture;
+	renderTexture.create(m_maxDimension, m_maxDimension);
+	renderTexture.clear(m_wall);
+	renderTexture.draw(sprite);
+	renderTexture.display();
+
+	sf::Image result = renderTexture.getTexture().copyToImage();
+	memcpy(m_pixels, result.getPixelsPtr(), sizeof(sf::Uint8) * m_maxDimension * m_maxDimension * 4);
+	m_texture.update(m_pixels);
+}
+
+void Hourglass::SimulateSeq()
 {
 	unsigned state[4];
 	unsigned resultState[4];
@@ -67,53 +116,135 @@ void Hourglass::Simulate()
 			unsigned result = LUT::resultTable[lutCase];
 
 			// special case of two sand cells are next to each other with air below them
-			if(lutCase == 80 && m_distribution(m_generator) < 0.5f)
+			if (lutCase == 80 && m_distribution(m_generator) < 0.5f)
 			{
 				// the cells dont update
 				result = lutCase;
 			}
 
-			resultState[0] = (result & maskLeftTop) >> 6;
-			resultState[1] = (result & maskRightTop) >> 4;
-			resultState[2] = (result & maskLeftBottom) >> 2;
-			resultState[3] = (result & maskRightBottom) >> 0;
+			// only if the result is different from the current state
+			if (result != lutCase)
+			{
+				resultState[0] = (result & maskLeftTop) >> 6;
+				resultState[1] = (result & maskRightTop) >> 4;
+				resultState[2] = (result & maskLeftBottom) >> 2;
+				resultState[3] = (result & maskRightBottom) >> 0;
 
-			// write new pixels
-			WriteColorToPixels(m_pixels, LUT::colorLUT[resultState[0]], pixelIndex[0]);
-			WriteColorToPixels(m_pixels, LUT::colorLUT[resultState[1]], pixelIndex[1]);
-			WriteColorToPixels(m_pixels, LUT::colorLUT[resultState[2]], pixelIndex[2]);
-			WriteColorToPixels(m_pixels, LUT::colorLUT[resultState[3]], pixelIndex[3]);
+				// write new pixels
+				WriteColorToPixels(m_pixels, sf::Color(LUT::colorLUT[resultState[0]]), pixelIndex[0]);
+				WriteColorToPixels(m_pixels, sf::Color(LUT::colorLUT[resultState[1]]), pixelIndex[1]);
+				WriteColorToPixels(m_pixels, sf::Color(LUT::colorLUT[resultState[2]]), pixelIndex[2]);
+				WriteColorToPixels(m_pixels, sf::Color(LUT::colorLUT[resultState[3]]), pixelIndex[3]);
+			}
 		}
 	}
-
-	// apply new pixels
-	m_texture.update(m_pixels);
-
-	m_useOffset = !m_useOffset;
 }
 
-void Hourglass::Draw(sf::RenderWindow& window) const
+void Hourglass::SimulateOpenCL(SimulationMode::Enum simulationMode)
 {
-	window.draw(m_sprite);
+	if(simulationMode != m_simulationMode)
+	{
+		BuildKernel(simulationMode);
+	}
+
+	size_t pixelBufferSize = sizeof(uint32_t) * m_maxDimension * m_maxDimension;
+	m_queue.enqueueWriteBuffer(m_pixelsBuffer, CL_TRUE, 0, pixelBufferSize, m_pixels);
+
+	m_queue.enqueueWriteBuffer(m_resultTableBuffer, CL_TRUE, 0, sizeof(cl_uint) * 256, LUT::resultTable);
+	m_queue.enqueueWriteBuffer(m_colorRTableBuffer, CL_TRUE, 0, sizeof(cl_uint) * 256, LUT::colorRTable);
+	m_queue.enqueueWriteBuffer(m_colorLUTBuffer, CL_TRUE, 0, sizeof(cl_uint) * 3, LUT::colorLUTEndianSwapped);
+
+
+	cl_float randomValues[256];
+	for (size_t i = 0; i < 256; ++i)
+	{
+		randomValues[i] = m_distribution(m_generator);
+	}
+	m_queue.enqueueWriteBuffer(m_randomValuesBuffer, CL_TRUE, 0, sizeof(cl_float) * 256, randomValues);
+
+	// arguments
+	m_kernel.setArg(0, m_pixelsBuffer);
+	m_kernel.setArg(1, m_maxDimension);
+	m_kernel.setArg(2, m_useOffset);
+	m_kernel.setArg(3, m_resultTableBuffer);
+	m_kernel.setArg(4, m_colorRTableBuffer);
+	m_kernel.setArg(5, m_colorLUTBuffer);
+	m_kernel.setArg(6, m_randomValuesBuffer);
+
+	// start running kernel
+	m_queue.enqueueNDRangeKernel(m_kernel, m_offset, m_global, m_local);
+
+	m_queue.enqueueReadBuffer(m_pixelsBuffer, CL_TRUE, 0, pixelBufferSize, m_pixels);
 }
 
-void Hourglass::Rotate(float angle)
+void Hourglass::BuildKernel(SimulationMode::Enum simulationMode)
 {
-	float half = m_maxDimension * 0.5f;
-	sf::Sprite sprite(m_texture);
-	sprite.setOrigin(half, half);
-	sprite.setPosition(half, half);
-	sprite.rotate(angle);
+	const std::string KERNEL_FILE = "Assets/Kernel/hourglass.cl";
+	cl_int err = CL_SUCCESS;
+	cl::Program program;
+	std::pair<cl::Device, cl::Context> deviceInfo;
 
-	sf::RenderTexture renderTexture;
-	renderTexture.create(m_maxDimension, m_maxDimension);
-	renderTexture.clear(m_wall);
-	renderTexture.draw(sprite);
-	renderTexture.display();
+	try
+	{
+		if (simulationMode == SimulationMode::CPU)
+			deviceInfo = OpenCLManager::GetDevice("cpu");
+		else if (simulationMode == SimulationMode::GPU)
+			deviceInfo = OpenCLManager::GetDevice("gpu");
+		else
+			return;
 
-	sf::Image result = renderTexture.getTexture().copyToImage();
-	memcpy(m_pixels, result.getPixelsPtr(), sizeof(sf::Uint8) * m_maxDimension * m_maxDimension * 4);
-	m_texture.update(m_pixels);
+		// load and build kernel
+		std::ifstream sourceFile(KERNEL_FILE);
+		if (!sourceFile)
+		{
+			printf("kernel source file (%s) not found\n", KERNEL_FILE.c_str());
+			return;
+		}
+
+		std::string sourceCode(std::istreambuf_iterator<char>(sourceFile), (std::istreambuf_iterator<char>()));
+		cl::Program::Sources source(1, std::make_pair(sourceCode.c_str(), sourceCode.length() + 1));
+		program = cl::Program(deviceInfo.second, source);
+		program.build(std::vector<cl::Device>{deviceInfo.first});
+
+		// create kernel
+		m_kernel = cl::Kernel(program, "simulate_hourglass", &err);;
+		cl::Event event;
+
+		// create queue
+		m_queue = cl::CommandQueue(deviceInfo.second, deviceInfo.first, 0, &err);
+
+		// pixel buffer
+		size_t pixelBufferSize = sizeof(uint32_t) * m_maxDimension * m_maxDimension;
+		m_pixelsBuffer = cl::Buffer(deviceInfo.second, CL_MEM_READ_WRITE, pixelBufferSize);
+
+		// LUT buffers
+		m_resultTableBuffer = cl::Buffer(deviceInfo.second, CL_MEM_READ_ONLY, sizeof(cl_uint) * 256);
+		m_colorRTableBuffer = cl::Buffer(deviceInfo.second, CL_MEM_READ_ONLY, sizeof(cl_uint) * 256);
+		m_colorLUTBuffer = cl::Buffer(deviceInfo.second, CL_MEM_READ_ONLY, sizeof(cl_uint) * 3);
+
+		// random buffer
+		m_randomValuesBuffer = cl::Buffer(deviceInfo.second, CL_MEM_READ_ONLY, sizeof(cl_float) * 256);
+
+		// launch kernel
+		m_offset = cl::NDRange(0, 0);
+
+		size_t dimensionPow2 = Pow2RoundUp(m_maxDimension);
+		m_global = cl::NDRange(dimensionPow2, dimensionPow2);
+
+		size_t maxWorkGroupSize = deviceInfo.first.getInfo<CL_DEVICE_MAX_WORK_GROUP_SIZE>();
+		size_t maxLocal = (maxWorkGroupSize > dimensionPow2) ? dimensionPow2 : maxWorkGroupSize;
+		m_local = cl::NDRange(2, maxLocal * 0.5f);
+	}
+	catch (cl::Error error)
+	{
+		std::string s;
+		program.getBuildInfo(deviceInfo.first, CL_PROGRAM_BUILD_LOG, &s);
+		printf("%s\n", s.c_str());
+		program.getBuildInfo(deviceInfo.first, CL_PROGRAM_BUILD_OPTIONS, &s);
+		printf("%s\n", s.c_str());
+
+		printf("ERROR: %s(%d)\n", error.what(), error.err());
+	}
 }
 
 void Hourglass::DrawEmptyHourglass(void)
@@ -154,18 +285,6 @@ void Hourglass::DrawEmptyHourglass(void)
 			}
 		}
 	}
-}
-
-void Hourglass::WriteColorToPixels(sf::Uint8* pixelArray, const sf::Color& color, size_t index)
-{
-	// R
-	pixelArray[index] = color.r;
-	// G
-	pixelArray[index + 1] = color.g;
-	// B
-	pixelArray[index + 2] = color.b;
-	// A
-	pixelArray[index + 3] = color.a;
 }
 
 void Hourglass::RemoveSand(sf::Vector2f position, float radius)
@@ -212,4 +331,31 @@ void Hourglass::ReplacePixels(size_t x, size_t y, float radius, sf::Color& oldCo
 	}
 
 	m_texture.update(m_pixels);
+}
+
+void Hourglass::WriteColorToPixels(uint8_t* pixelArray, const sf::Color& color, size_t index)
+{
+	// R
+	pixelArray[index] = color.r;
+	// G
+	pixelArray[index + 1] = color.g;
+	// B
+	pixelArray[index + 2] = color.b;
+	// A
+	pixelArray[index + 3] = color.a;
+}
+
+size_t Hourglass::Pow2RoundUp(size_t x)
+{
+	if (x == 0)
+		return x;
+
+	--x;
+	x |= x >> 1;
+	x |= x >> 2;
+	x |= x >> 4;
+	x |= x >> 8;
+	x |= x >> 16;
+
+	return x + 1;
 }

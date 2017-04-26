@@ -1,12 +1,15 @@
 #include "LUT.h"
 
-unsigned int LUT::resultTable[256];
-unsigned int LUT::colorRTable[256];
+#include <SFML/Graphics/Color.hpp>
 
-const sf::Color LUT::colorLUT[3] = {
-	sf::Color(255, 255, 255, 255),	// air
-	sf::Color(245, 204, 77, 255),	// sand
-	sf::Color(64, 64, 64, 255),		// wall
+cl_uint LUT::resultTable[256];
+cl_uint LUT::colorRTable[256];
+cl_uint LUT::colorLUTEndianSwapped[3];
+
+const cl_uint LUT::colorLUT[3] = {
+	sf::Color(255, 255, 255, 255).toInteger(),	// air
+	sf::Color(245, 204, 77, 255).toInteger(),	// sand
+	sf::Color(64, 64, 64, 255).toInteger(),		// wall
 };
 
 void LUT::CreateLUT()
@@ -35,4 +38,18 @@ void LUT::CreateLUT()
 	colorRTable[255] = 0;	// air
 	colorRTable[245] = 1;	// sand
 	colorRTable[64] = 2;	// wall
+
+	// swapped color LUT
+	for(size_t i = 0; i < 3; ++i)
+	{
+		colorLUTEndianSwapped[i] = swapEndian(colorLUT[i]);
+	}
+}
+
+cl_uint LUT::swapEndian(cl_uint num)
+{
+	return	((num >> 24) & 0xff) | // move byte 3 to byte 0
+		((num << 8) & 0xff0000) | // move byte 1 to byte 2
+		((num >> 8) & 0xff00) | // move byte 2 to byte 1
+		((num << 24) & 0xff000000); // byte 0 to byte 3
 }

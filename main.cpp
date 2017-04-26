@@ -14,6 +14,8 @@ int main()
 	bool addSand = false;
 	bool simulate = false;
 
+	SimulationMode::Enum simulationMode = SimulationMode::GPU;
+
 	// create LUT
 	LUT::CreateLUT();
 
@@ -26,6 +28,9 @@ int main()
 	cursor.setFillColor(sf::Color::Transparent);
 	cursor.setOutlineColor(sf::Color::Red);
 	cursor.setOutlineThickness(2.0f);
+
+	// clear color
+	sf::Color clearColor(LUT::colorLUT[2]);
 
 	sf::Clock deltaClock;
 	sf::Time dt;
@@ -45,10 +50,27 @@ int main()
 
 			if (event.type == sf::Event::KeyPressed)
 			{
+				// change simulation mode
+				if (event.key.code == sf::Keyboard::M)
+				{
+					switch (simulationMode)
+					{
+					case SimulationMode::Sequential:
+						simulationMode = SimulationMode::CPU;
+						break;
+					case SimulationMode::CPU:
+						simulationMode = SimulationMode::GPU;
+						break;
+					case SimulationMode::GPU:
+						simulationMode = SimulationMode::Sequential;
+						break;
+					}
+				}
+
 				// simulate single step
 				if (event.key.code == sf::Keyboard::S)
 				{
-					hourglass.Simulate();
+					hourglass.Simulate(simulationMode);
 				}
 
 				// toggle simulation
@@ -125,7 +147,7 @@ int main()
 		
 		if(simulate)
 		{
-			hourglass.Simulate();
+			hourglass.Simulate(simulationMode);
 		}
 
 		// set cursor
@@ -133,7 +155,7 @@ int main()
 		cursor.setOrigin(cursorSize, cursorSize);
 		cursor.setPosition(mousePosWorld.x, mousePosWorld.y);
 
-		window.clear(LUT::colorLUT[2]);
+		window.clear(clearColor);
 
 		// draw
 		hourglass.Draw(window);

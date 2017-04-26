@@ -1,15 +1,17 @@
 #ifndef LUT_H
 #define LUT_H
 
-#include <SFML/Graphics.hpp>
+#include <CL/cl_ext.h>
 
 struct LUT
 {
-	static unsigned int resultTable[256];
-	static unsigned int colorRTable[256];
-	static const sf::Color colorLUT[3];
+	static cl_uint resultTable[256];
+	static cl_uint colorRTable[256];
+	static const cl_uint colorLUT[3];
+	static cl_uint colorLUTEndianSwapped[3];
 
 	static void CreateLUT(void);
+	static cl_uint swapEndian(cl_uint num);
 };
 
 #endif
