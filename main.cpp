@@ -8,7 +8,10 @@ int main()
 	sf::RenderWindow window(vm, "Hourglass - Alex Müller");
 
 	sf::View gameView(sf::FloatRect(0, 0, 1920, 1080));
+	window.setMouseCursorVisible(false);
 	
+	bool removeSand = false;
+	bool addSand = false;
 	bool simulate = false;
 
 	// create LUT
@@ -17,12 +20,22 @@ int main()
 	// create the hourglass
 	Hourglass hourglass(300, 1000, gameView.getSize());
 
+	// mouse cursor (brush)
+	float cursorSize = 10.0f;
+	sf::CircleShape cursor(cursorSize);
+	cursor.setFillColor(sf::Color::Transparent);
+	cursor.setOutlineColor(sf::Color::Red);
+	cursor.setOutlineThickness(2.0f);
+
 	sf::Clock deltaClock;
 	sf::Time dt;
 	while(window.isOpen())
 	{
 		dt = deltaClock.restart();
 		window.setView(gameView);
+
+		sf::Vector2i mousePosPixel = sf::Mouse::getPosition(window);
+		sf::Vector2f mousePosWorld = window.mapPixelToCoords(mousePosPixel);
 
 		sf::Event event;
 		while (window.pollEvent(event))
@@ -44,6 +57,7 @@ int main()
 					simulate = !simulate;
 				}
 
+				// rotate hourglass
 				if (event.key.code == sf::Keyboard::Right)
 				{
 					hourglass.Rotate(45.0f);
@@ -53,19 +67,77 @@ int main()
 				{
 					hourglass.Rotate(-45.0f);
 				}
+
+				// change brush size
+				if (event.key.code == sf::Keyboard::Equal)
+				{
+					++cursorSize;
+				}
+
+				if (event.key.code == sf::Keyboard::Dash)
+				{
+					if(cursorSize > 1.0f)
+						--cursorSize;
+				}
+			}
+
+			if(event.type == sf::Event::MouseButtonPressed)
+			{
+				// remove sand
+				if(event.mouseButton.button == sf::Mouse::Left)
+				{
+					removeSand = true;
+				}
+
+				// add sand
+				if (event.mouseButton.button == sf::Mouse::Right)
+				{
+					addSand = true;
+				}
+			}
+
+			if (event.type == sf::Event::MouseButtonReleased)
+			{
+				// remove sand
+				if (event.mouseButton.button == sf::Mouse::Left)
+				{
+					removeSand = false;
+				}
+
+				// add sand
+				if (event.mouseButton.button == sf::Mouse::Right)
+				{
+					addSand = false;
+				}
 			}
 		}
 		
 		// update
+		if (removeSand)
+		{
+			hourglass.RemoveSand(mousePosWorld, cursorSize);
+		}
+
+		if (addSand)
+		{
+			hourglass.AddSand(mousePosWorld, cursorSize);
+		}
+		
 		if(simulate)
 		{
 			hourglass.Simulate();
 		}
 
+		// set cursor
+		cursor.setRadius(cursorSize);
+		cursor.setOrigin(cursorSize, cursorSize);
+		cursor.setPosition(mousePosWorld.x, mousePosWorld.y);
+
 		window.clear(LUT::colorLUT[2]);
 
 		// draw
 		hourglass.Draw(window);
+		window.draw(cursor);
 
 		window.display();
 	}

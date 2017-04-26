@@ -12,7 +12,10 @@ public:
 
 	void Simulate(void);
 	void Draw(sf::RenderWindow& window) const;
+
 	void Rotate(float angle);
+	void RemoveSand(sf::Vector2f position, float radius);
+	void AddSand(sf::Vector2f position, float radius);
 
 private:
 	sf::Color m_air;
@@ -33,6 +36,7 @@ private:
 	bool m_useOffset;
 
 	void DrawEmptyHourglass(void);
+	void ReplacePixels(size_t x, size_t y, float radius, sf::Color& oldColor, sf::Color& newColor);
 	void WriteColorToPixels(sf::Uint8* pixelArray, const sf::Color& color, size_t index);
 };
 

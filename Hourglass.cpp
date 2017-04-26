@@ -167,3 +167,49 @@ void Hourglass::WriteColorToPixels(sf::Uint8* pixelArray, const sf::Color& color
 	// A
 	pixelArray[index + 3] = color.a;
 }
+
+void Hourglass::RemoveSand(sf::Vector2f position, float radius)
+{
+	size_t x = position.x - (m_sprite.getPosition().x - m_maxDimension * 0.5f);
+	size_t y = position.y - (m_sprite.getPosition().y - m_maxDimension * 0.5f);
+
+	if (x < 0 || x > m_maxDimension || y < 0 || y > m_maxDimension)
+		return;
+
+	ReplacePixels(x, y, radius, m_sand, m_air);
+}
+
+void Hourglass::AddSand(sf::Vector2f position, float radius)
+{
+	size_t x = position.x - (m_sprite.getPosition().x - m_maxDimension * 0.5f);
+	size_t y = position.y - (m_sprite.getPosition().y - m_maxDimension * 0.5f);
+	
+	if (x < 0 || x > m_maxDimension || y < 0 || y > m_maxDimension)
+		return;
+
+	ReplacePixels(x, y, radius, m_air, m_sand);
+}
+
+void Hourglass::ReplacePixels(size_t x, size_t y, float radius, sf::Color& oldColor, sf::Color& newColor)
+{
+	for (size_t row = 0; row < m_maxDimension; ++row)
+	{
+		for (size_t col = 0; col < m_maxDimension; ++col)
+		{
+			int a = col - x;
+			int b = row - y;
+
+			// check if we are inside the radius
+			if(a * a + b * b <= radius * radius)
+			{
+				size_t pixelIndex = (row * m_maxDimension + col) * 4;
+				if(m_pixels[pixelIndex] == oldColor.r)
+				{
+					WriteColorToPixels(m_pixels, newColor, pixelIndex);
+				}
+			}
+		}
+	}
+
+	m_texture.update(m_pixels);
+}
