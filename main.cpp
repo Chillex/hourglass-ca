@@ -15,7 +15,7 @@ int main()
 	bool addSand = false;
 	bool simulate = false;
 
-	SimulationMode::Enum simulationMode = SimulationMode::GPU;
+	SimulationMode::Enum simulationMode = SimulationMode::Sequential;
 
 	// create LUT
 	LUT::CreateLUT();
@@ -40,7 +40,7 @@ int main()
 	sf::Font font;
 	font.loadFromFile("Assets/Font/digital_counter_7.ttf");
 
-	sf::Text modeText("GPU Mode", font, 24);
+	sf::Text modeText("Sequential Mode", font, 24);
 	modeText.setPosition(10, 44);
 	modeText.setFillColor(sf::Color(255, 64, 64, 255));
 

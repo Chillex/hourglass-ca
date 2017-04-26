@@ -33,6 +33,17 @@ void LUT::CreateLUT()
 	resultTable[0b01010001] = 0b00010101;
 	resultTable[0b01010100] = 0b01000101;
 	resultTable[0b01010000] = 0b00000101;
+	// sand and wall cases
+	resultTable[0b01100000] = 0b00100100;
+	resultTable[0b01000010] = 0b00000110;
+	resultTable[0b01100010] = 0b00100110;
+	resultTable[0b10010000] = 0b10000001;
+	resultTable[0b10011000] = 0b10001001;
+	resultTable[0b00011000] = 0b00001001;
+	resultTable[0b01011000] = 0b01001001;
+	resultTable[0b01010010] = 0b00010110;
+	resultTable[0b01001000] = 0b00001001;
+	resultTable[0b00010010] = 0b00000110;
 
 	// color R table
 	colorRTable[255] = 0;	// air
