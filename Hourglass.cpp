@@ -150,18 +150,12 @@ void Hourglass::SimulateOpenCL(SimulationMode::Enum simulationMode)
 	size_t pixelBufferSize = sizeof(uint32_t) * m_maxDimension * m_maxDimension;
 	m_queue.enqueueWriteBuffer(m_pixelsBuffer, CL_TRUE, 0, pixelBufferSize, m_pixels);
 
-	m_queue.enqueueWriteBuffer(m_resultTableBuffer, CL_TRUE, 0, sizeof(cl_uint) * 256, LUT::resultTable);
-	m_queue.enqueueWriteBuffer(m_colorRTableBuffer, CL_TRUE, 0, sizeof(cl_uint) * 256, LUT::colorRTable);
-	m_queue.enqueueWriteBuffer(m_colorLUTBuffer, CL_TRUE, 0, sizeof(cl_uint) * 3, LUT::colorLUTEndianSwapped);
-
-
 	cl_float randomValues[256];
 	for (size_t i = 0; i < 256; ++i)
 	{
 		randomValues[i] = m_distribution(m_generator);
 	}
 	m_queue.enqueueWriteBuffer(m_randomValuesBuffer, CL_TRUE, 0, sizeof(cl_float) * 256, randomValues);
-
 	// arguments
 	m_kernel.setArg(0, m_pixelsBuffer);
 	m_kernel.setArg(1, m_maxDimension);
@@ -221,6 +215,10 @@ void Hourglass::BuildKernel(SimulationMode::Enum simulationMode)
 		m_resultTableBuffer = cl::Buffer(deviceInfo.second, CL_MEM_READ_ONLY, sizeof(cl_uint) * 256);
 		m_colorRTableBuffer = cl::Buffer(deviceInfo.second, CL_MEM_READ_ONLY, sizeof(cl_uint) * 256);
 		m_colorLUTBuffer = cl::Buffer(deviceInfo.second, CL_MEM_READ_ONLY, sizeof(cl_uint) * 3);
+
+		m_queue.enqueueWriteBuffer(m_resultTableBuffer, CL_TRUE, 0, sizeof(cl_uint) * 256, LUT::resultTable);
+		m_queue.enqueueWriteBuffer(m_colorRTableBuffer, CL_TRUE, 0, sizeof(cl_uint) * 256, LUT::colorRTable);
+		m_queue.enqueueWriteBuffer(m_colorLUTBuffer, CL_TRUE, 0, sizeof(cl_uint) * 3, LUT::colorLUTEndianSwapped);
 
 		// random buffer
 		m_randomValuesBuffer = cl::Buffer(deviceInfo.second, CL_MEM_READ_ONLY, sizeof(cl_float) * 256);

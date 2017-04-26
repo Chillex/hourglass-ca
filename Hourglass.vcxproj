@@ -123,12 +123,14 @@
     </Link>
   </ItemDefinitionGroup>
   <ItemGroup>
+    <ClCompile Include="FPSCounter.cpp" />
     <ClCompile Include="Hourglass.cpp" />
     <ClCompile Include="LUT.cpp" />
     <ClCompile Include="main.cpp" />
     <ClCompile Include="OpenCLManager.cpp" />
   </ItemGroup>
   <ItemGroup>
+    <ClInclude Include="FPSCounter.h" />
     <ClInclude Include="Hourglass.h" />
     <ClInclude Include="LUT.h" />
     <ClInclude Include="OpenCLManager.h" />

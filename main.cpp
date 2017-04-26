@@ -1,6 +1,7 @@
 #include <SFML/Graphics.hpp>
 #include "Hourglass.h"
 #include "LUT.h"
+#include "FPSCounter.h"
 
 int main()
 {
@@ -32,6 +33,17 @@ int main()
 	// clear color
 	sf::Color clearColor(LUT::colorLUT[2]);
 
+	// FPS counter
+	FPSCounter fpsCounter("Assets/Font/digital_counter_7.ttf");
+	
+	// mode display
+	sf::Font font;
+	font.loadFromFile("Assets/Font/digital_counter_7.ttf");
+
+	sf::Text modeText("GPU Mode", font, 24);
+	modeText.setPosition(10, 44);
+	modeText.setFillColor(sf::Color(255, 64, 64, 255));
+
 	sf::Clock deltaClock;
 	sf::Time dt;
 	while(window.isOpen())
@@ -57,12 +69,15 @@ int main()
 					{
 					case SimulationMode::Sequential:
 						simulationMode = SimulationMode::CPU;
+						modeText.setString("CPU Mode");
 						break;
 					case SimulationMode::CPU:
 						simulationMode = SimulationMode::GPU;
+						modeText.setString("GPU Mode");
 						break;
 					case SimulationMode::GPU:
 						simulationMode = SimulationMode::Sequential;
+						modeText.setString("Sequential Mode");
 						break;
 					}
 				}
@@ -135,6 +150,8 @@ int main()
 		}
 		
 		// update
+		fpsCounter.Update(dt);
+
 		if (removeSand)
 		{
 			hourglass.RemoveSand(mousePosWorld, cursorSize);
@@ -159,6 +176,8 @@ int main()
 
 		// draw
 		hourglass.Draw(window);
+		fpsCounter.Draw(window);
+		window.draw(modeText);
 		window.draw(cursor);
 
 		window.display();
